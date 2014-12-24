@@ -87,13 +87,16 @@ def verifica_servidores_dns():
         lock.acquire()
         registros_verificados += 1
         andamento_verificacao = int(registros_verificados / float(total_ip_dns) * 100)
-        print ('Quantidade: ' + str(registros_verificados) + ' de: ' + str(total_ip_dns)
+        print ('Andamento: ' + str(registros_verificados) + ' de: ' + str(total_ip_dns)
                 + '---' + str(andamento_verificacao) + '%')
         lock.release()
 
         if contador_status_conexao >= 5:
-                return -1
+            return -1
         
+        if fila_ips_dns.empty():
+            return 1            
+
         for linha_fqdn in fqdn_ips:
             fqdn_definido = str(linha_fqdn).split(',')[0]
             conjunto_ip_fqdn_definido = set(str(linha_fqdn).split(',')[1:])
