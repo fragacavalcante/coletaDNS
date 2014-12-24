@@ -11,20 +11,23 @@ from datetime import date
 from datetime import datetime
 
 registros_verificados = 0
+andamento_verificacao = 0
+total_ip_dns = 0
+contador_status_conexao = 0
 
 fila_ips_dns = Queue.Queue()
 lock = threading.Lock()
 
 def gerencia_verificacao():
-       
+    global total_ip_dns
 # Lê arquivo com endereços IPs dos servidores DNS que serão consultados e
 # adiciona em uma lista
 
 # Define o total de  threads que será criada e a quantidade de ips por
 # thread que serão verificados
     tamanho_fila = popula_fila()
-    
-    total_thread = 200
+    total_ip_dns = tamanho_fila
+    total_thread = 100
     contador_thread = 0
 
     t2 = threading.Thread(name='Thread_verifica_acesso', target=verifica_acesso_internet)
@@ -35,7 +38,6 @@ def gerencia_verificacao():
         t1 = threading.Thread(name='Thread' + str(contador_thread), target=verifica_servidores_dns)
         t1.start()
     
-
 
 def popula_fila():
     global fila_ips_dns
@@ -54,6 +56,7 @@ def popula_fila():
 def verifica_servidores_dns():    
     global lock
     global registros_verificados
+    global contador_status_conexao
 
     # Lê arquivo com os FQDNs que serão consultados juntamente com o endereço(s) IPs relacionados
     # Transformar em um dicionário onde a chave é o fqdn e as tuplas são os
@@ -82,10 +85,14 @@ def verifica_servidores_dns():
         ip_dns = (fila_ips_dns.get())
         fila_ips_dns.task_done()
         lock.acquire()
-        print ip_dns
-        print registros_verificados
         registros_verificados += 1
+        andamento_verificacao = int(registros_verificados / float(total_ip_dns) * 100)
+        print ('Quantidade: ' + str(registros_verificados) + ' de: ' + str(total_ip_dns)
+                + '---' + str(andamento_verificacao) + '%')
         lock.release()
+
+        if contador_status_conexao >= 5:
+                return -1
         
         for linha_fqdn in fqdn_ips:
             fqdn_definido = str(linha_fqdn).split(',')[0]
@@ -109,19 +116,13 @@ def verifica_servidores_dns():
                     print "Consistência encontrada"                
 
             except dns.resolver.NXDOMAIN:
-                grava_arquivo_resultado_consulta(ip_dns, 'NXDOMAIN', lock)
-                print ('NXDOMAIN')
-                pass
+                grava_arquivo_resultado_consulta(ip_dns, 'NXDOMAIN', lock)                                
             except dns.resolver.Timeout:
-                grava_arquivo_resultado_consulta(ip_dns, 'TIMEOUT', lock)
-                print('Timeout')
+                grava_arquivo_resultado_consulta(ip_dns, 'TIMEOUT', lock)                
                 break
             except dns.resolver.NoNameservers:
-                grava_arquivo_resultado_consulta(ip_dns, 'NONAMESERVERS', lock)
-                print ('NoNameservers')
-                pass
+                grava_arquivo_resultado_consulta(ip_dns, 'NONAMESERVERS', lock)                
             except dns.exception.DNSException, erro:
-                print ("Outros erros DNS %s" % str(erro))
                 grava_arquivo_resultado_consulta(ip_dns, 'OUTROSERROS', lock)
 
 
@@ -159,30 +160,33 @@ def grava_informacoes_dns(ip_definido, fqdn, resposta, lock):
 
 
 def verifica_acesso_internet():
-    url ='http://wwww.google.com.br'
+    global contador_status_conexao
+    url ='http://www.google.com.br'   
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
     mensagem_erro = "erro na comunicação com a Internet"
 
     while True:
         try:
-            resposta = requests.get(url)           
+            resposta = requests.get(url, headers=headers)         
+
+            if contador_status_conexao > 0:
+                contador_status_conexao -= 1  
+            time.sleep(60)
         except requests.ConnectionError:
             print mensagem_erro
             grava_arquivo_status_internet(mensagem_erro)
-            time.sleep(60)
-            continue
+            contador_status_conexao += 1
+            print contador_status_conexao
+            time.sleep(60)            
         except requests.HTTPError:
             print mensagem_erro
             grava_arquivo_status_internet(mensagem_erro)
+            contador_status_conexao += 1
             time.sleep(60)
-            continue
 
-        if resposta.status_code == requests.codes.ok :
-            pass    
-        else:
-            print mensagem_erro
-            grava_arquivo_status_internet(mensagem_erro)
-            time.sleep(60)
-            continue           
+        if contador_status_conexao >= 5:
+                return -1
+
 
 def grava_arquivo_resultado_consulta(ip, texto, lock):
     data_hora = str(datetime.now())
