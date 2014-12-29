@@ -9,6 +9,7 @@ import Queue
 import time
 from datetime import date
 from datetime import datetime
+import os
 
 registros_verificados = 0
 andamento_verificacao = 0
@@ -25,6 +26,7 @@ def gerencia_verificacao():
 
 # Define o total de  threads que será criada e a quantidade de ips por
 # thread que serão verificados
+    
     tamanho_fila = popula_fila()
     total_ip_dns = tamanho_fila
     total_thread = 100
@@ -132,8 +134,9 @@ def verifica_servidores_dns():
             except dns.exception.DNSException, erro:
                 grava_arquivo_resultado_consulta(ip_dns, 'OUTROSERROS', lock)
 
-
 def baixa_evidencia_site(ip, fqdn, lock):       
+    diretorio_resultados = 'Resultado Consultas\\' + str(date.today()) + '\\'
+
     url ='http://' + str(ip)
     headers = {'Host': str(fqdn)}
     
@@ -145,12 +148,17 @@ def baixa_evidencia_site(ip, fqdn, lock):
         return
 
     if resposta.status_code == requests.codes.ok :
-        with open('downloads\\' + str(ip) + '-' + str(fqdn) + '.html', 'w') as f:
+        with open(diretorio_resultados + str(ip) + '-' + str(fqdn) + '.html', 'w') as f:
             f.write(resposta.content)
 
 def grava_informacoes_dns(ip_definido, fqdn, resposta, lock):
-    lock.acquire()
-    nome_arquivo = str(date.today()) + '-' + str(fqdn) + '-' + 'resultado_validacao_dns.txt'
+    diretorio_resultados = 'Resultado Consultas\\' + str(date.today())
+
+    lock.acquire()    
+    if not os.path.exists(diretorio_resultados):
+        os.makedirs(diretorio_resultados)
+    
+    nome_arquivo = diretorio_resultados + '\\' + str(date.today()) + '-' + str(fqdn) + '-' + 'resultado_validacao_dns.txt'
     #print str(threading.currentThread()) + ip_definido + "Gravando arquivo"
     resultado_consuta_ips = open(nome_arquivo, 'a+')
     resultado_consuta_ips.writelines(ip_definido)
@@ -171,7 +179,8 @@ def verifica_acesso_internet():
 
     while True:
 
-        if fila_ips_dns.empty():            
+        if fila_ips_dns.empty():
+            envia_email()            
             return 1    
 
         try:
@@ -193,7 +202,7 @@ def verifica_acesso_internet():
         if contador_status_conexao >= 5:
             return -1
 
-def grava_arquivo_resultado_consulta(ip, texto, lock):
+def grava_arquivo_resultado_consulta(ip, texto, lock):    
     data_hora = str(datetime.now())
     nome_arquivo = str(date.today()) + '-' + 'resultado_consulta_dns.txt'
     lock.acquire()
@@ -207,6 +216,34 @@ def grava_arquivo_status_internet(texto):
     nome_arquivo = str(date.today()) + '-' + 'status_conexao.txt'
     with open( nome_arquivo, 'a+' ) as f:
         f.write(data_hora + '-' + texto + '\n')
+
+def envia_email():
+    import smtplib
+
+    gmail_user = "teste.professor.claudio@gmail.com"
+    gmail_pwd = "colocar senha "
+    FROM = 'teste.professor.claudio@gmail.com'
+    TO = ['claudio.cavalcante@gmail.com'] #must be a list
+    SUBJECT = "Processo de verificação DNS encerrado"
+    TEXT = "Processo de verificação DNS encerrado"
+
+
+
+    # Prepare actual message
+    message = """\From: %s\nTo: %s\nSubject: %s\n\n%s
+    """ % (FROM, ", ".join(TO), SUBJECT, TEXT)
+    try:
+        #server = smtplib.SMTP(SERVER) 
+        server = smtplib.SMTP("smtp.gmail.com", 587) #or port 465 doesn't seem to work!
+        server.ehlo()
+        server.starttls()
+        server.login(gmail_user, gmail_pwd)
+        server.sendmail(FROM, TO, message)
+        #server.quit()
+        server.close()
+        print 'successfully sent the mail'
+    except:
+        print "failed to send mail"
 
 
 if __name__ == "__main__":
